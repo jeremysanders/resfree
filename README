@@ -1,0 +1,180 @@
+Please note: this code is old and would need considerable updates for
+modern Xspec versions. It is provided as-is.
+
+resfree 0.21
+------------
+
+see: Sanders & Fabian (2006)
+     Off-centre abundance peaks and resonance scattering in clusters
+     of galaxies
+
+https://academic.oup.com/mnras/article/370/1/63/1023799
+
+Please email me for help.
+
+This is an xspec model for fitting spectra from clusters including
+resonance scattering.
+
+In the version here, up to 16 annuli can be fit, with multiple
+datasets per annulus. This value can be increased (see below).
+
+There is one change from the version of the model described in the
+paper. If interpolation is used, the log of the temperature and
+density are interpolated in log radius, rather than the temperature
+and density themselves.
+
+Compiling the model
+-------------------
+Here are instructions on compiling the model with xspec11. I have only
+tested the model on xspec11.3.1 under Fedora Core 2 linux/RHEL4 (x86, and
+x86-64). For details on compiling local models in xspec see:
+
+http://heasarc.gsfc.nasa.gov/docs/xanadu/xspec/xspec11/manual/node60.html
+
+Basically, you should (this is using linux):
+
+1. Unpack this distribution somewhere sensible
+2. You need to edit the file resfree.h
+   The directory DATABASEDIR needs to be edited to contain the
+   directory you've just unpacked. DON'T FORGET THIS STEP!!
+   You also need to set XSPECDATADIR to where xspec stores the apec
+   data files. You may need to change the APECVERSION, but this should
+   be the same as aped_resonance_lines.dat was generated with.
+3. Do (using tcsh):
+
+> (do what you need to do to setup xantools/xspec)
+> setenv LMODDIR /path/to/where/this/model/is/
+> setenv LD_LIBRARY_PATH ${LMODDIR}:${LD_LIBRARY_PATH}
+> cd $LHEASOFT/../spectral/xspec/src/local_mod
+> hmake
+
+You can now work on your spectra in xspec if this worked. You need to
+set LMODDIR and LD_LIBRARY_PATH each time you use the model before
+running xspec.
+
+Using the model
+---------------
+The model is a little unconventional compared to other xspec
+models. This is because it needs to know the norm of the model is
+fixed in order to compute the true physical density of the gas.
+
+Typically in xspec you would use:
+
+XSPEC>model phabs(resfree)
+
+There are quite a lot of parameters. Using this model syntax, they
+are:
+
+1:     nH: absorption to apply to entire resonace scattering model (phabs)
+2-17:  ne1-ne16: physical electron density in each shell, inside to outside
+       you need to thaw those parameters for the shells you have
+       loaded.
+       For instance if you have 6 shells, thaw 2-7
+18-33: kT1-kT16: temperature for each shell (thaw only those appropriate)
+34-49: Z1-Z16: abundance (rel to solar) for each shell (thaw only those
+       appropriate).
+50-65: nH1-nH16: absorption, nH, per unit volume, in units of
+       10^22 cm^-2 kpc^-1 in each shell. The model is much faster with these
+       set to 0.
+66:    scatout: whether to include the effect of resonance scattering out of
+       the line of sight. 0 is off, 1 is on. You probably want to
+       set parameter 51 to the same value.
+67:    scatin: whether to include the effect of resonance scattering
+       into the line of sight. 0 is off, 1 is on. This parameter only
+       works if scatout is set to 1.
+68:    subshell: the number of subshells included within each
+       shell. This is n_s in the paper. More gives more accurate
+       results, but you may not see much difference beyond
+       3. Increasing this number slows down the model a lot.
+69:    redshift: redshift of the cluster. This needs to be set
+       correctly as the model uses this to work out the distance to
+       the cluster, and so calculate the physical electron density. It
+       uses the current xspec cosmology to do this.
+70:    turb: additional turbulent velocity component. Increase this
+       value (in km/s), to add an additional turbulent component to
+       the line widths. This is v_turb in the paper. Increasing this
+       value typically decreases the effect of resonance scattering.
+71:    inner: the inner radius of the inner shell in
+       arcseconds. Remember to set this if you miss out the centre of
+       the cluster!!
+72:    interpol: whether to interpolate the temperature, density, and
+       abundance from the centre of the shells in the subshells. If
+       this is set to 1, then interpolation is used, otherwise there
+       is a fixed ne, Z and kT within each shell. Experience indicates the
+       results are less stable with this enabled.
+73:    norm: THIS MUST BE SET TO 1, OR THE MODEL BREAKS!
+
+To use the model, you need to add two header keywords to each
+spectrum (this is a bit like projct).
+
+You need to set
+XFLT0001 = outer radius of annulus in _arcseconds_
+XFLT0002 = degrees the annulus occupies (360 for a full circle)
+
+You load the spectra in as a single datagroup (in radial order, outwards):
+
+XSPEC> data ann1.spec ann2.spec ann3.spec ....
+
+You can supply multiple spectra for each annulus, if you set the
+XFLT0001 parameter to be the same for each spectrum for the same
+region. The XFLT0002 parameters can be different, however. You need to
+put the spectra for the same annulus together, e.g.
+
+XSPEC> data ann1_ds1.spec ann1_ds2.spec ann2_ds1.spec ann2_ds2.spec ...
+
+The model prints out how many annuli and datasets you have loaded, so
+it's a good idea to check these values.
+
+Hints:
+ o Make sure you know what cosmology xspec is using before using the model.
+ o Freeze the norm parameter to 1 straight away after defining the model in
+   case you forget.
+ o Remember to set the inner radius and redshift parameters straight
+   away.
+ o Set parameters 66 and 67 to 1 to include resonance scattering
+ o In my experience the best way to get a fast fit is:
+     - Set N_H to an appropriate value, and thaw
+     - Set all the T parameters to the average temperature of the cluster
+     - Thaw all the appropriate ne parameters
+     - Fit
+     - Thaw all the appropriate T parameters
+     - Fit
+     - Thaw all the appropriate Z parameters
+     - Fit
+     - (optionally thaw absorption parameters, fit)
+ o You probably want to calculate all the errors. I've got a useful
+   script to do this:
+
+  XSPEC> source common.tcl
+  XSPEC> source profile_errors.tcl
+  XSPEC> profile_errors out.qdp 2 18 34
+
+  This will dump the density, temperature and abundance profiles,
+  using the XFLT0001 parameters to calculate the physical radius in
+  kpc. You can then plot the file in qdp.
+
+Increasing the maximum number of shells to fit
+----------------------------------------------
+You probably don't want to do this, but you can increase the number of
+shells by:
+
+o Change PARAMS_NOSHELLS in resfree.h to a larger number
+o Edit lmodel.dat, and add extra parameters for ne, kT and Z as
+  appropriate.
+o Recompile from scratch (delete all *.o *.so *.a)
+o Be aware all the parameter numbers will change!
+
+Using a new version of APED/ATOMDB
+----------------------------------
+If a new version of APED/ATOMDB comes along, you can recreate the
+resonance line database using the dump_resonance_lines.py script. To
+do this you need the following Python modules installed:
+
+o numarray: http://www.stsci.edu/resources/software_hardware/numarray
+o PyFITS:   http://www.stsci.edu/resources/software_hardware/pyfits
+
+You need to edit the dump_resonance_lines.py script to edit the
+location of the atomdb directory (see the top of the file). You can
+then run the script
+
+> python dump_resonance_lines.py
